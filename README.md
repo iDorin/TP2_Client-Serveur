@@ -1,3 +1,5 @@
+L'énoncé: https://www.iro.umontreal.ca/~monnier/2245/h2017/tp2.pdf
+
 ## Scenario
 
 ### Initialisation
