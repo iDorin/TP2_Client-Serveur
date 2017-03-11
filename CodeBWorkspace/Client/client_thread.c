@@ -251,7 +251,7 @@ ct_code (void *param)
   char buffer[256] = "INI";
   char str[8];
 
-  //printf("num_resources = %d\n", num_resources);
+  // printf("num_resources = %d\n", num_resources);
 
   for (int i = 0; i < num_resources; i++)
   {
