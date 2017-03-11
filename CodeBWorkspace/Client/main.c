@@ -7,7 +7,7 @@ main (int argc, char *argv[argc + 1])
 {
   if (argc < 5)
     {
-      fprintf (stderr, "Usage: %s <port-nb> <nb-clients> <nb-requests> <resources>...\n",
+      fprintf (stderr, "Usage: %s <port-nb> <nb-clients> <nb-requests> <nb-resources>...\n",
                argv[0]);
       exit (1);
     }
@@ -20,6 +20,8 @@ main (int argc, char *argv[argc + 1])
   provisioned_resources = malloc(num_resources * sizeof (int));
   for (unsigned int i = 0; i < num_resources; i++)
     provisioned_resources[i] = atoi (argv[i + 4]);
+
+  configurer_serveur(num_resources, provisioned_resources); // TEMP
 
   client_thread *client_threads
     = malloc (num_clients * sizeof(client_thread));

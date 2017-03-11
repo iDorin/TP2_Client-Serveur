@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-
 #include <pthread.h>
 #include <unistd.h>
 
@@ -33,11 +32,11 @@ struct client_thread
 void ct_init (client_thread *);
 void ct_create_and_start (client_thread *);
 void ct_wait_server (int num_clients, client_thread *client_threads);
-
 void st_print_results (FILE *, bool);
-
-// Added
 void * ct_code (void *param);
 void send_request (int client_id, int request_id, int socket_fd);
+
+// Added
+void configurer_serveur(int num_resources, int *provisioned_resources);
 
 #endif // CLIENTTHREAD_H

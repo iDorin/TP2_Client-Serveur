@@ -43,6 +43,103 @@ unsigned int count_dispatched = 0;
 // Nombre total de requêtes envoyées.
 unsigned int request_sent = 0;
 
+char hostname[] = "localhost"; // "192.168.1.82" for testing on remote server
+
+
+
+int
+connection_serveur (char hostname[])
+{
+  int socket_fd = -1;                          // Descripteur fichier du socket
+
+  socket_fd = socket(AF_INET, SOCK_STREAM, 0); // Ne pas mettre SOCK_STREAM | SOCK_NONBLOCK
+  if (socket_fd < 0) perror("ERROR opening socket");
+
+  // Get host name
+  server = gethostbyname(hostname);
+  if (server == NULL) {
+    fprintf(stderr,"ERROR, no such host\n");
+    exit(0);
+  }
+
+  // Sets fields in serv_addr
+  memset((char *) &serv_addr, 0, sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+
+  bcopy( (char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length );
+
+  serv_addr.sin_port = htons(port_number);
+
+  // Establish connection to the server
+  if ( connect(socket_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0 ) // attempt to connect to a socket
+  {
+    perror("Statut");
+    //perror("ERREUR connection");
+  } else
+    printf("Connection serveur reussie!\n");
+
+  return socket_fd;
+
+}
+
+
+// Send/receive commandes to/from server
+void
+send_cmd (char buffer[], int socket_fd)
+{
+  printf("Client > %s", buffer);
+
+  FILE  *socket = fdopen (socket_fd, "w+"); // Cree un fichier pour ecriture et lecture
+
+  // Envoye commande vers le serveur
+  fprintf (socket, buffer);
+  fflush(socket);
+
+  //sleep (1); // simulation attente reponse
+
+  // Recoit message du serveur
+  bzero(buffer, 256);
+  read(socket_fd, buffer, 255);
+  printf("Server > %s", buffer);
+
+  bzero(buffer, 256);
+}
+
+
+/*
+ * Configuration du serveur avec BEG et PRO
+ */
+void
+configurer_serveur (int num_resources, int *provisioned_resources) // NEW
+{
+  char buffer[256];
+  char str[256];
+  int  socket_fd = connection_serveur(hostname);
+
+  printf("Configuration serveur...\n");
+
+  // Envoye la commande BEG ...
+  bzero(buffer, 256);
+  bzero(str, 256);
+  strcat(buffer, "BEG"); // concatenation
+  sprintf(str, " %d", num_resources); // met dans str le num_ressources
+  strcat(buffer, str);
+  strcat(buffer, "\n");
+  send_cmd (buffer, socket_fd);
+
+  // Envoye la commande PRO ...
+  strcat(buffer, "PRO");
+  for (int i = 0; i < num_resources; i++)  // Met les ressources dans le buffer en tant que string
+  {
+    sprintf(str, " %d", provisioned_resources[i]);
+    strcat(buffer, str);
+  }
+  strcat(buffer, "\n");
+  send_cmd (buffer, socket_fd);
+
+  close(socket_fd);
+}
+
 
 /*
  * Initialise un thread du client
@@ -78,10 +175,9 @@ ct_create_and_start (client_thread * ct)
 void
 send_request (int client_id, int request_id, int socket_fd)
 {
-  char buffer[256];
+/*  char buffer[256];
 
   // TP2 TODO
-
   // Passage de messages
   printf("Entrez la commande: ");
   bzero(buffer, 256);
@@ -100,13 +196,13 @@ send_request (int client_id, int request_id, int socket_fd)
   bzero(buffer, 256);
   //fread(buffer, 1, 200, socket);
   read(socket_fd, buffer, 255);
-  printf("%s\n", buffer);
+  printf("Server > %s\n", buffer);
 
   fclose (socket);
 
   close(socket_fd);
   // TP2 TODO:END
-
+*/
 }
 
 
@@ -127,15 +223,13 @@ ct_code (void *param)
   if (socket_fd < 0) perror("ERROR opening socket");
 
   // Get host name
-  server = gethostbyname("localhost");
-  //server = gethostbyname("192.168.1.82"); // for testing on remote server
+  server = gethostbyname(hostname);
   if (server == NULL) {
     fprintf(stderr,"ERROR, no such host\n");
     exit(0);
   }
 
   // Sets fields in serv_addr
-  //bzero((char *) &serv_addr, sizeof(serv_addr)); // alternative plus ancienne pour memset
   memset((char *) &serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
 
@@ -148,8 +242,7 @@ ct_code (void *param)
   {
     perror("Statut");
     //perror("ERREUR connection");
-  } else
-    printf("Connexion avec le serveur OK.\n");
+  }
 
   // TP2 TODO:END
 
@@ -176,6 +269,7 @@ ct_code (void *param)
   close(socket_fd); // TEMP
 
   pthread_exit (NULL);
+
 }
 
 

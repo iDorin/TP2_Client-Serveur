@@ -1,18 +1,14 @@
 #define _XOPEN_SOURCE 700   /* So as to allow use of `fdopen` and `getline`.  */
 
 #include "server_thread.h"
-
 #include <netinet/in.h>
 #include <netdb.h>
-
 #include <strings.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-
 #include <sys/types.h>
 #include <sys/socket.h>
-
 #include <time.h>
 
 enum { NUL = '\0' };
@@ -49,6 +45,12 @@ unsigned int clients_ended = 0;
 // TODO: Ajouter vos structures de données partagées, ici.
 int *available;
 
+/* Nombre de resources différentes.  */
+int num_resources;
+
+/* Quantité disponible pour chaque resource.  */
+int *provisioned_resources;
+
 
 /*
  * Ouvre un socket pour le serveur.
@@ -76,37 +78,42 @@ st_open_socket (int port_number)
 
 
 /*
+ * Attend la connection d'un client.
  * Initialise les donnees pour l'algo du banquier ?
  */
 void
 st_init ()
 {
 	// TODO
-	//printf("Initialisation serveur BEGIN\n");
 
 	// Attend la connection d'un client et initialise les structures pour
 	// l'algorithme du banquier.
 
-	/*
-  // accept() causes process to block until a client connects to the server. Wakeup process when client connection established
-  // Return new file descriptor for connections
-  // Second arg ( (struct... &cli_addr ) - pointer to the client adress on the other end of connection
-  clilen = sizeof(cli_addr);
-  newsockfd = accept( server_socket_fd, (struct sockaddr *) &cli_addr, &clilen );
-  if (newsockfd < 0) perror("ERROR on accept");
-	 */
 
-	// Initialize buffer, and then read from socket using newsockfd
-	/*  bzero(buffer, 256);
-  n = read(server_socket_fd, buffer, 255); // reading from socket
-  if (n < 0) perror("ERROR reading from socket");
-  printf("Here is the message: %s\n",buffer);
+	// Attend la connection du client
 
-  // Write message to client
-  n = write(server_socket_fd, "I got your message", 18);
-  if (n < 0) perror("ERROR writing to socket");
-	 */
-	//printf("Initialisation serveur END\n");
+	struct sockaddr_in  serv_addr, cli_addr;
+	socklen_t           clilen = sizeof (cli_addr);
+
+	int newsockfd = -1;
+
+	printf("The server waiting for initialisation...\n");
+
+	while (newsockfd < 0)
+		newsockfd = accept (server_socket_fd, (struct sockaddr *) &cli_addr, &clilen); // attend jusqu'a la initialisation du client
+
+
+	// Initialisation structures pour l'algo du banquier
+
+	server_thread *st = NULL; // server thread necessaire seulement pour l'argument de la fonction  st_process_requests()
+
+	st_process_requests (st, newsockfd);
+
+	//printf("num_resources = %d\n", num_resources); // pour tester
+	//printf("provisioned_resources = %d\n", provisioned_resources[0]);  // pour tester
+
+
+	printf("The server is initialised.\n");
 
 	// END TODO
 }
@@ -160,9 +167,55 @@ st_code (void *param)
 }
 
 
+
+/*
+ * Traitement de commandes globales BEG, PRO et END.
+ */
+void
+traitement_cmd_globale (char cmd[], char *args)
+{
+	// Traitement commande BEG.
+	// Recupere le nombre de ressources et initialise num_resources
+	if ( !strcmp(cmd, "BEG") )
+	{
+		num_resources = atoi(args);
+		//printf("num_resources = %d\n", num_resources); // pour tester
+	}
+
+	// Traitement commande PRO. Recupere le nombre de d'instances pour chaque ressource
+	// et initialise provisioned_resources[]
+	if ( !strcmp(cmd, "PRO") ) // si la commande est PRO...
+	{
+		char str[256]; // dans ce string on collecte les valeurs du PRO
+		int index = 0; // indexe du provision_ressources[]
+
+		provisioned_resources = malloc(num_resources * sizeof (int));
+
+		for (int i = 1; i < strlen(args); i++) // 0-me char est un " ", alors on commence par indexe 1.
+		{
+			int j = 0; // indexe dans l'interior du string du valeur str
+			bzero(str, 256);
+
+			while ( i < strlen(args) && args[i] != ' ')
+			{
+				str[j] = args[i];
+				j++;
+				i++;
+			}
+
+			provisioned_resources[ index ] = atoi( str );
+			//printf("provisioned_resources = %d\n", provisioned_resources[index]); // pour tester
+			index++;
+		}
+	}
+
+	// Traitement commande END.
+	// TO DO
+}
+
+
 /*
  * Traitement de requetes.
- * Appelee dans la fonction precedente
  */
 void
 st_process_requests (server_thread * st, int socket_fd)
@@ -188,15 +241,29 @@ st_process_requests (server_thread * st, int socket_fd)
 		// Si la commande recue est incomplete...
 		if (!args || cnt < 1 || args[cnt - 1] != '\n')
 		{
-			printf ("Thread %d received incomplete cmd = %s!\n", st->id, cmd);
+			if ( st == NULL )
+			{
+				printf ("Server received incomplete cmd = %s!\n", cmd); // cas d'initialisation du serveur
+			} else
+				printf ("Thread %d received incomplete cmd = %s!\n", st->id, cmd);
+
 			printf (" incomplete cmd\n");
 			break;
 		}
 
-		printf ("Thread %d received the command: %s%s", st->id, cmd, args);
+		// Initialisation serveur
+		if ( st == NULL )
+		{
+			printf ("Server received the command: %s%s", cmd, args);
+
+			traitement_cmd_globale (cmd, args);
+
+		} else
+			printf ("Thread %d received the command: %s%s", st->id, cmd, args);
+
 
 		//fprintf (socket, "ERR Unknown command\n"); // sends formatted output to a stream
-		fprintf (socket, "Server %d received the command: %s%s", st->id, cmd, args); // sends formatted output to a stream
+		fprintf (socket, "ACK\n"); // sends formatted output to a stream
 
 		free (args); // deallocates the block of memory...
 	}
@@ -215,6 +282,8 @@ st_signal ()
 	// TODO: Remplacer le contenu de cette fonction
 
 	printf("Lancement signal aux clients de se terminer...\n"); // TEMP
+
+	fprintf (socket, "Ce client doit se terminer...\n"); // sends formatted output to a stream
 
 	//close(server_socket_fd); // TEMP
 	// TODO end
