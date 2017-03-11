@@ -71,12 +71,20 @@ connection_serveur (char hostname[])
   serv_addr.sin_port = htons(port_number);
 
   // Establish connection to the server
-  if ( connect(socket_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0 ) // attempt to connect to a socket
+  int checks = 0;
+  while ( connect(socket_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0 ) // attempt to connect to a socket
   {
-    perror("Statut");
-    //perror("ERREUR connection");
-  } else
-    printf("Connection serveur reussie!\n");
+    if ( checks > 3 )
+    {
+      perror("Server offline");
+      close(socket_fd);
+      return -1;
+    }
+    sleep(1);
+    checks++;
+  }
+
+  //printf("Done!\n");
 
   return socket_fd;
 
@@ -85,11 +93,11 @@ connection_serveur (char hostname[])
 
 // Send/receive commandes to/from server
 void
-send_cmd (char buffer[], int socket_fd)
+send_cmd (int client_id, char buffer[], int socket_fd)
 {
-  printf("Client > %s", buffer);
-
   FILE  *socket = fdopen (socket_fd, "w+"); // Cree un fichier pour ecriture et lecture
+
+  printf("Client %d > %s", client_id, buffer);
 
   // Envoye commande vers le serveur
   fprintf (socket, buffer);
@@ -100,7 +108,7 @@ send_cmd (char buffer[], int socket_fd)
   // Recoit message du serveur
   bzero(buffer, 256);
   read(socket_fd, buffer, 255);
-  printf("Server > %s", buffer);
+  printf("Server to client %d > %s", client_id, buffer);
 
   bzero(buffer, 256);
 }
@@ -114,28 +122,36 @@ configurer_serveur (int num_resources, int *provisioned_resources) // NEW
 {
   char buffer[256];
   char str[256];
-  int  socket_fd = connection_serveur(hostname);
+  int  socket_fd;
 
-  printf("Configuration serveur...\n");
+  printf("Trying to connect to the server...\n");
 
-  // Envoye la commande BEG ...
-  bzero(buffer, 256);
-  bzero(str, 256);
-  strcat(buffer, "BEG"); // concatenation
-  sprintf(str, " %d", num_resources); // met dans str le num_ressources
-  strcat(buffer, str);
-  strcat(buffer, "\n");
-  send_cmd (buffer, socket_fd);
+  socket_fd = connection_serveur(hostname);
 
-  // Envoye la commande PRO ...
-  strcat(buffer, "PRO");
-  for (int i = 0; i < num_resources; i++)  // Met les ressources dans le buffer en tant que string
+  if (socket_fd > 0)
   {
-    sprintf(str, " %d", provisioned_resources[i]);
+    printf("Starting server configuration...\n");
+
+    // Envoye la commande BEG ...
+    bzero(buffer, 256);
+    bzero(str, 256);
+    strcat(buffer, "BEG"); // concatenation
+    sprintf(str, " %d", num_resources); // met dans str le num_ressources
     strcat(buffer, str);
-  }
-  strcat(buffer, "\n");
-  send_cmd (buffer, socket_fd);
+    strcat(buffer, "\n");
+    send_cmd (NULL, buffer, socket_fd);
+
+    // Envoye la commande PRO ...
+    strcat(buffer, "PRO");
+    for (int i = 0; i < num_resources; i++)  // Met les ressources dans le buffer en tant que string
+    {
+      sprintf(str, " %d", provisioned_resources[i]);
+      strcat(buffer, str);
+    }
+    strcat(buffer, "\n");
+    send_cmd (NULL, buffer, socket_fd);
+  } else
+    exit(0); // si le serveur est offline
 
   close(socket_fd);
 }
@@ -147,9 +163,8 @@ configurer_serveur (int num_resources, int *provisioned_resources) // NEW
 void
 ct_init (client_thread * ct)
 {
-    printf("Initialisation client #%d\n", count); // TEMP
   ct->id = count++;
-
+  //printf("Client %d initialised.\n", ct->id); // TEMP
 }
 
 
@@ -215,34 +230,42 @@ ct_code (void *param)
   int socket_fd = -1;                          // Descripteur fichier du socket
   client_thread *ct = (client_thread *) param; // Thread du client
 
-
   // TP2 TODO
   // Vous devez ici faire l'initialisation des petits clients (`INI`).
 
-  socket_fd = socket(AF_INET, SOCK_STREAM, 0); // Ne pas mettre SOCK_STREAM | SOCK_NONBLOCK
-  if (socket_fd < 0) perror("ERROR opening socket");
+  // Le client essaie de se connecter
+  //printf("Client %d > ", ct->id);
+  printf("Client %d trying connection...\n", ct->id);
+  socket_fd = connection_serveur(hostname);
 
-  // Get host name
-  server = gethostbyname(hostname);
-  if (server == NULL) {
-    fprintf(stderr,"ERROR, no such host\n");
-    exit(0);
-  }
-
-  // Sets fields in serv_addr
-  memset((char *) &serv_addr, 0, sizeof(serv_addr));
-  serv_addr.sin_family = AF_INET;
-
-  bcopy( (char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length );
-
-  serv_addr.sin_port = htons(port_number);
-
-  // Establish connection to the server
-  if ( connect(socket_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0 ) // attempt to connect to a socket
+  // Si la connection n'a pas reussie le thread fini
+  if (socket_fd < 0)
   {
-    perror("Statut");
-    //perror("ERREUR connection");
+    printf("Client %d signed out.\n", ct->id);
+    pthread_exit (NULL);
   }
+
+  printf("... client %d connected.\n", ct->id);
+
+ // char buffer[num_resources];// = "INI 1 2 1 10 0\n";
+  char buffer[256] = "INI";
+  char str[8];
+
+  //printf("num_resources = %d\n", num_resources);
+
+  for (int i = 0; i < num_resources; i++)
+  {
+    sprintf( str, " %d", rand() % 10 );
+    strcat(buffer, str);
+  }
+
+  strcat(buffer, "\n");
+
+  printf("buffer = %s\n", buffer);
+
+  send_cmd (ct->id, buffer, socket_fd);
+
+
 
   // TP2 TODO:END
 
