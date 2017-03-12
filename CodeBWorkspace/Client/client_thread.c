@@ -92,12 +92,16 @@ connection_serveur (char hostname[])
 
 
 // Send/receive commandes to/from server
-void
+char *
 send_cmd (int client_id, char buffer[], int socket_fd)
 {
   FILE  *socket = fdopen (socket_fd, "w+"); // Cree un fichier pour ecriture et lecture
 
-  printf("Client %d > %s", client_id, buffer);
+  if (client_id == NULL)
+  {
+    printf("Client > %s", buffer);
+  } else
+    printf("Client %d > %s", client_id, buffer);
 
   // Envoye commande vers le serveur
   fprintf (socket, buffer);
@@ -108,9 +112,13 @@ send_cmd (int client_id, char buffer[], int socket_fd)
   // Recoit message du serveur
   bzero(buffer, 256);
   read(socket_fd, buffer, 255);
-  printf("Server to client %d > %s", client_id, buffer);
+  if (client_id == NULL)
+  {
+    printf("Server > %s", buffer);
+  } else
+    printf("Server to client %d > %s", client_id, buffer);
 
-  bzero(buffer, 256);
+  return buffer; // reponse du serveur
 }
 
 
@@ -180,6 +188,63 @@ ct_create_and_start (client_thread * ct)
 }
 
 
+/*
+ * Mise a jour statistiques lors de l'exécution du serveur
+ */
+void
+update_results (char reponse[])
+{
+  char str[] = "nil";
+
+  for (int i = 0; i < 3; i++)
+    str[i] = reponse[i];
+
+  if ( !strcmp(str, "ACK") )
+    count_accepted++;
+
+  if ( !strcmp(str, "ERR") )
+    count_invalid++;
+
+  if ( !strcmp(str, "WAI") )
+    count_on_wait++;
+
+  if ( !strcmp(str, "REF") )
+    count_invalid++;
+
+  if ( !strcmp(str, "ACC") )
+    count_dispatched++;
+
+  request_sent++;
+}
+
+
+
+// Annonce du client avec son usage maximum
+// Retourne un tableau de ressources d'usage maximum
+int *
+send_INI (int client_id, int socket_fd)
+{
+  char buffer[256] = "";
+  char str[8] = "";
+  int *valeurs = malloc(num_resources * sizeof (int));;
+
+  strcat(buffer, "INI");
+  for (int i = 0; i < num_resources; i++) // transforme les chiffres du INI en characteres
+  {
+    valeurs[i] = rand() % 10;
+    sprintf( str, " %d", valeurs[i] );
+    strcat(buffer, str);
+  }
+
+  strcat(buffer, "\n"); // Maintenant le buffer contient une commande complete
+
+  // Envoyer commande et mise a jour resultats
+  update_results ( send_cmd (client_id, buffer, socket_fd) );
+
+  return valeurs;
+}
+
+
 //
 // Vous devez modifier cette fonction pour faire l'envoie des requêtes.
 // Les ressources demandées par la requête doivent être choisies aléatoirement
@@ -188,36 +253,42 @@ ct_create_and_start (client_thread * ct)
 // Assurez-vous que la dernière requête d'un client libère toute les ressources
 // qu'il a jusqu'alors accumulées.
 void
-send_request (int client_id, int request_id, int socket_fd)
+send_request (int client_id, int request_id, int socket_fd, int valeurs_INI[])
 {
-/*  char buffer[256];
+  char buffer[256] = "";
+  char str[8] = "";
 
-  // TP2 TODO
-  // Passage de messages
-  printf("Entrez la commande: ");
-  bzero(buffer, 256);
-  fgets(buffer, 255, stdin);
+  strcat(buffer, "REQ");
 
-  //char buffer[] = "BEG 5\n"; // obligatoire \n a la fin
-  printf("Commande du Client %d: %s\n", client_id, buffer);
+  // Genere des valeurs aleatoires pour REQ, mais <= que valeurs_INI[]
+  for (int i = 0; i < num_resources; i++) // transforme les chiffres du REQ en characteres
+  {
+    if (valeurs_INI[i] == 0)
+    {
+      sprintf( str, " %d", 0 );
+    } else
+      sprintf( str, " %d", (rand() % (valeurs_INI[i] + 2) - 2) );
+    strcat(buffer, str);
+  }
 
-  FILE *socket = fdopen (socket_fd, "w+"); // Cree un fichier pour ecriture et lecture
+  strcat(buffer, "\n"); // Maintenant le buffer contient une commande complete
 
-  // Envoye message vers le serveur
-  fprintf (socket, buffer);
-  fflush(socket);
+  // Envoyer commande et mise a jour resultats
+  update_results ( send_cmd (client_id, buffer, socket_fd) );
 
-  // Recoit message du serveur
-  bzero(buffer, 256);
-  //fread(buffer, 1, 200, socket);
-  read(socket_fd, buffer, 255);
-  printf("Server > %s\n", buffer);
-
-  fclose (socket);
-
-  close(socket_fd);
   // TP2 TODO:END
-*/
+
+}
+
+
+//
+void
+send_CLO (int client_id, int socket_fd)
+{
+  char buffer[256] = "CLO\n";
+
+  // Envoyer commande et mise a jour resultats
+  update_results ( send_cmd (client_id, buffer, socket_fd) );
 }
 
 
@@ -247,28 +318,11 @@ ct_code (void *param)
 
   printf("... client %d connected.\n", ct->id);
 
- // char buffer[num_resources];// = "INI 1 2 1 10 0\n";
-  char buffer[256] = "INI";
-  char str[8];
-
-  // printf("num_resources = %d\n", num_resources);
-
-  for (int i = 0; i < num_resources; i++)
-  {
-    sprintf( str, " %d", rand() % 10 );
-    strcat(buffer, str);
-  }
-
-  strcat(buffer, "\n");
-
-  printf("buffer = %s\n", buffer);
-
-  send_cmd (ct->id, buffer, socket_fd);
-
+  // Envoye requete INI. Recupere les valeurs de INI dans le tableau valeursINI
+  int *valeurs_INI = send_INI (ct->id, socket_fd);
 
 
   // TP2 TODO:END
-
 
   for (unsigned int request_id = 0; request_id < num_request_per_client; request_id++)
     {
@@ -277,7 +331,8 @@ ct_code (void *param)
       // Vous devez ici coder, conjointement avec le corps de send request,
       // le protocole d'envoi de requête.
 
-      send_request (ct->id, request_id, socket_fd);
+      // Requetes REQs
+      send_request (ct->id, request_id, socket_fd, valeurs_INI);
 
       // TP2 TODO:END
 
@@ -288,6 +343,9 @@ ct_code (void *param)
        * delay.tv_sec = 0;
        * nanosleep (&delay, NULL); */
     }
+
+  // Envoye requete CLO
+  send_CLO (ct->id, socket_fd);
 
   close(socket_fd); // TEMP
 
@@ -310,8 +368,18 @@ ct_wait_server (int num_clients, client_thread *client_threads)
 
   // TP2 TODO
 
-  sleep (10);
+  sleep (5); // le temps permit d'utilisations de ressources
 
+  int socket_fd = connection_serveur (hostname);
+
+  send_cmd (NULL, "END\n", socket_fd);
+
+  for (int id = 0; id < num_clients; id++) // transforme les chiffres du REQ en characteres
+  {
+
+  }
+
+  close(socket_fd);
 
   // TP2 TODO:END
 

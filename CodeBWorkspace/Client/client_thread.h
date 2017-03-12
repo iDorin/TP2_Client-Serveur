@@ -34,7 +34,7 @@ void ct_create_and_start (client_thread *);
 void ct_wait_server (int num_clients, client_thread *client_threads);
 void st_print_results (FILE *, bool);
 void * ct_code (void *param);
-void send_request (int client_id, int request_id, int socket_fd);
+void send_request (int client_id, int request_id, int socket_fd, int valeurs_INI[]);
 
 // Added
 void configurer_serveur(int num_resources, int *provisioned_resources);
