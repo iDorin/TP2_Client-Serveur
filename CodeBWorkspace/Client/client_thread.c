@@ -376,7 +376,7 @@ ct_wait_server (int num_clients, client_thread *client_threads)
 
   for (int id = 0; id < num_clients; id++) // transforme les chiffres du REQ en characteres
   {
-
+    // TO DO ?
   }
 
   close(socket_fd);
